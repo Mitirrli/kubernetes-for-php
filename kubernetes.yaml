@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: ${namespace}
+  name: ${name}
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: ${name}
+      enabled: "true"
+  template:
+    metadata:
+      labels:
+        app: ${name}
+        enabled: "true"
+    spec:
+      imagePullSecrets:
+      - name: ${user}
+      containers:
+      - name: code
+        image: ${code docker factory}
+        volumeMounts:
+        - mountPath: /code-data
+          name: code
+      - name: fpm
+        image: ${fpm docker factory}
+        ports:
+        - name: http-php
+          containerPort: 9000
+        resources:
+          limits:
+            cpu: 350m
+            memory: 350Mi
+          requests:
+            cpu: 50m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: code
+      - name: nginx
+        image: nginx
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+        - name: https
+          containerPort: 443
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: code
+        - mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+          name: nginx-config
+        - mountPath: /var/www/html/.env
+          name: env
+          subPath: .env
+      volumes:
+      - name: code
+        emptyDir: {}
+      - name: nginx-config
+        configMap:
+          name: gateway-nginx-config
+      - name: env
+        configMap:
+          name: env-prod
+---
+apiVersion: v1
+kind: Service
+metadata:
+  namespace: ${namespace}
+  name: ${name}
+spec:
+  selector:
+    app: ${name}
+    enabled: "true"
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  namespace: ${namespace}
+  name: ${name}
+  annotations:
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/redirect-entry-point: https
+spec:
+  tls:
+  - secretName: ${secret name}
+  rules:
+  - host: ${url}
+    http:
+      paths:
+        - backend:
+            serviceName: ${service name}
+            servicePort: 80
